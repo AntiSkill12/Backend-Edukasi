@@ -4,12 +4,13 @@ from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont
 import firebase_admin
 from firebase_admin import credentials, firestore
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # === Init Flask ===
 app = Flask(__name__)
 
 # === Load Firebase ===
-cred = credentials.Certificate("./app/edukasi-penyakit-buah-firebase-adminsdk-fbsvc-0310db69b4.json")
+cred = credentials.Certificate("./app/edukasi-penyakit-buah-firebase-adminsdk-fbsvc-43e257fef6.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -261,12 +262,25 @@ def create_user():
     if not data or "email" not in data or "password" not in data or "name" not in data:
         return jsonify({"error": "Email, Password, and Name are required"}), 400
 
+    # 🔍 Validasi email sudah terdaftar
+    existing_user = db.collection("users").where("email", "==", data["email"]).get()
+    if existing_user:  
+        return jsonify({"error": "Email already registered"}), 409
+
+    # Validasi panjang password
+    if len(data["password"]) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    # Hash password
+    hashed_password = generate_password_hash(data["password"])
+
     doc_ref = db.collection("users").add({
         "email": data["email"],
-        "password": data["password"],  # NOTE: sebaiknya di-hash (misal pakai bcrypt)
+        "password": hashed_password,   
         "name": data["name"],
         "createdAt": firestore.SERVER_TIMESTAMP
     })
+
 
     return jsonify({"message": "User created", "id": doc_ref[1].id}), 201
 
@@ -323,6 +337,7 @@ def delete_user(user_id):
     return jsonify({"message": "User deleted"}), 200
 
 
+
 # ====================== LOGIN ======================
 @app.route("/login", methods=["POST"])
 def login_user():
@@ -330,18 +345,20 @@ def login_user():
     if not data or "email" not in data or "password" not in data:
         return jsonify({"error": "Email and Password are required"}), 400
 
-    users_ref = db.collection("users").where("email", "==", data["email"]).where("password", "==", data["password"]).stream()
+    users_ref = db.collection("users").where("email", "==", data["email"]).stream()
 
     user_data = None
     for user in users_ref:
-        user_data = user.to_dict()
-        user_data["id"] = user.id
+        user_dict = user.to_dict()
+        if check_password_hash(user_dict["password"], data["password"]):
+            user_data = user_dict
+            user_data["id"] = user.id
+            break
 
     if user_data:
         return jsonify({"message": "Login success", "user": user_data}), 200
     else:
-        return jsonify({"error": "Invalid email or password"}), 401
-
+        return jsonify({"error": "Email or Password not registered"}), 401
 
 
 
