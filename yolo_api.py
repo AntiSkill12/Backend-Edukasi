@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 import os
+import re
+import uuid
 from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont
 import firebase_admin
@@ -102,7 +104,7 @@ disease_info = {
 CONFIDENCE_THRESHOLD = 0.3
 
 
-# ====================== DETECT ENDPOINT ======================
+# ====================== DETECTIONS CRUD ======================
 @app.route("/detect/<fruit>", methods=["POST"])
 def detect(fruit):
     if fruit not in models:
@@ -208,7 +210,6 @@ def detect(fruit):
 
     return jsonify(response_data)
 
-# ====================== DETECTIONS CRUD ======================
 
 # Get semua detection berdasarkan user_id
 @app.route("/detect/<user_id>", methods=["GET"])
@@ -256,6 +257,8 @@ def delete_detection_by_user_and_id(user_id, detection_id):
 
 
 # ====================== USER CRUD ======================
+email_pattern = r"[^@]+@[^@]+\.[^@]+"
+
 @app.route("/users", methods=["POST"])
 def create_user():
     data = request.json
@@ -292,6 +295,7 @@ def get_users():
     for doc in users_ref:
         user = doc.to_dict()
         user["id"] = doc.id
+        user.pop("password", None)
         users.append(user)
     return jsonify(users), 200
 
@@ -302,6 +306,7 @@ def get_user(user_id):
     if doc.exists:
         user = doc.to_dict()
         user["id"] = doc.id
+        user.pop("password", None)
         return jsonify(user), 200
     return jsonify({"error": "User not found"}), 404
 
@@ -315,9 +320,16 @@ def update_user(user_id):
 
     update_data = {}
     if "email" in data:
+        if not re.match(email_pattern, data["email"]):
+            return jsonify({"error": "Invalid email format"}), 400
+        existing_user = db.collection("users").where("email", "==", data["email"]).get()
+        if existing_user:
+            return jsonify({"error": "Email already registered"}), 409
         update_data["email"] = data["email"]
     if "password" in data:
-        update_data["password"] = data["password"]
+        if len(data["password"]) < 6:
+            return jsonify({"error": "Password must be at least 6 characters"}), 400
+        update_data["password"] = generate_password_hash(data["password"])
     if "name" in data:
         update_data["name"] = data["name"]
 
