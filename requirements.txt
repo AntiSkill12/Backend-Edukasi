@@ -1,0 +1,8 @@
+Flask
+torch
+torchvision
+ultralytics
+firebase-admin
+firebase
+pillow
+gunicorn

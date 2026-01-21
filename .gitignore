@@ -1,0 +1,8 @@
+.env
+__pycache__/
+uploads/
+node_modules
+package-lock.json
+package.json
+*.pt
+serviceAccountKey.json
